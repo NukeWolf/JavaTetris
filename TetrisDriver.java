@@ -198,7 +198,16 @@ public class TetrisDriver extends JFrame implements Runnable, KeyListener//Other
         for(block b : tetra_all){
             b.draw(g);
         }
+        
         selected_tetra.draw(g);
+        
+        //GHOST PIECE
+        tetra ghost = new tetra(selected_tetra,64);
+        while(ghost.can_move_down(tetra_all)){
+            ghost.down();
+        }
+        ghost.draw(g);
+        
         
         g.setColor(new Color(255,255,255));
         g.fillRect(670,60,120,120);
@@ -252,22 +261,28 @@ public class TetrisDriver extends JFrame implements Runnable, KeyListener//Other
 
     public void keyPressed(KeyEvent k)
     {
-        //KEY SHIFT : HOLDING KEY
-        if(k.getKeyCode()==32){
+        //KEY Space : HOLDING KEY
+        if(k.getKeyCode()==16){
             if(can_hold){
                 can_hold = false;
                 if (hold == null){
-                    hold = selected_tetra;
+                    hold = new tetra(selected_tetra.getId());
                     selected_tetra = tetra_queue.remove(0);
                     tetra_queue.add(new tetra()); 
                 }
                 else{
                     int hold_id = hold.getId();
-                    hold = selected_tetra;
+                    hold = new tetra(selected_tetra.getId());
                     selected_tetra = new tetra(hold_id);
                 }
             }
 
+        }
+        if(k.getKeyCode()==32){
+            while(selected_tetra.can_move_down(tetra_all)){
+                selected_tetra.down();
+            }
+            state = state.COLLAPSE;
         }
         
         // Up key : Rotate

@@ -31,15 +31,38 @@ public class tetra
         can_rotate=true;
         blocks = new block[4];
         setupTetraFromId(tetra_block);
+        //Setup Colors
+        for (block b :blocks){
+            b.setColor(c);
+        }
     }
     
     public tetra(tetra tet){
         tetra_block = tet.getId();
         can_rotate = tet.can_rotate;
         c = tet.c;
-        blocks = tet.blocks.clone();
+        blocks = tet.createBlocksCopy();
+        for (block b :blocks){
+            b.setColor(c);
+        }
+    }
+    public tetra(tetra tet,int transparency){
+        tetra_block = tet.getId();
+        can_rotate = tet.can_rotate;
+        c = new Color(tet.c.getRed(),tet.c.getGreen(),tet.c.getBlue(),128);
+        blocks = tet.createBlocksCopy();
+        for (block b :blocks){
+            b.setColor(c);
+        }
     }
     
+    public block[] createBlocksCopy(){
+        block new_blocks[] = new block[4];
+        for (int a = 0; a < 4; a++){
+            new_blocks[a] = new block(blocks[a].get_x(),blocks[a].get_y());
+        }
+        return new_blocks;
+    }
 
     public void draw(Graphics2D g)
     {  
@@ -116,11 +139,6 @@ public class tetra
             blocks[a].move_y(1);
         }
 
-    }
-    public void up(){
-        for(int a=0;a<=3;a++){
-            blocks[a].move_y(-1);
-        }
     }
 
     public boolean left(ArrayList<block> all_blocks){
