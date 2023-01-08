@@ -11,79 +11,60 @@ public class TetrisDriver extends JFrame implements Runnable, KeyListener//Other
 {
     Container con = getContentPane();
     Thread t = new Thread(this);
-    int timer1,timer2;
-    int sel,hdown,hold;
-    int rowcheck;
-    boolean selm,colapse,colapse1,rowbool,holding;
-    ArrayList<tetra> tet= new ArrayList<tetra>();
-    ArrayList<Integer> tetque= new ArrayList<Integer>();
+    // Constant Variables
+    public static final int GRID_HEIGHT = 20;
+    public static final int GRID_WIDTH = 10;
+    public static final int TETRA_DROP_INTERVAL_DEFAULT = 15;
+    int TETRA_DROP_INTERVAL;
+    
+    State state;
+    int main_clock_count;
+    boolean can_hold;
+    
+    ArrayList<block> tetra_all= new ArrayList<block>();
+    ArrayList<tetra> tetra_queue= new ArrayList<tetra>();
+    tetra selected_tetra, hold;
+    
     Clip song;
     Clip blast;
     Clip rota;
     Clip set;
+    
     public TetrisDriver()
     {
         con.setLayout(new FlowLayout());
         addKeyListener(this);
-        hdown=15;
-        sel = -1;
-        hold=0;
-        holding = true;
-        rowcheck=0;
-        colapse = false;
-        colapse1 = false;
-        rowbool=false;
+        
+        state = State.DROPPING;
+        can_hold = true;
+        TETRA_DROP_INTERVAL = TETRA_DROP_INTERVAL_DEFAULT;
+
         JOptionPane.showMessageDialog(null,"Welcome to Tetris! Use the left and right arrow keys to move left and right. Use the up arrow to rotate. Use the down arrow to speed up the block. Press space to hold certain blocks.");
+        
+        // Load Sounds
         try{
-            URL url = this.getClass().getClassLoader().getResource("assets/Tetris.wav");
-            AudioInputStream audioIn = AudioSystem.getAudioInputStream(url);
             song = AudioSystem.getClip();
-            song.open(audioIn);
-        }
-        catch(Exception e){
-            e.printStackTrace();
-
-        }
-        try{
-            URL url = this.getClass().getClassLoader().getResource("assets/blast.wav");
-            AudioInputStream audioIn = AudioSystem.getAudioInputStream(url);
+            song.open(loadAudioFile("assets/Tetris.wav"));
             blast = AudioSystem.getClip();
-            blast.open(audioIn);
-        }
-        catch(Exception e){
-            e.printStackTrace();
-
-        }
-        try{
-            URL url = this.getClass().getClassLoader().getResource("assets/switch.wav");
-            AudioInputStream audioIn = AudioSystem.getAudioInputStream(url);
+            blast.open(loadAudioFile("assets/blast.wav"));
             rota = AudioSystem.getClip();
-            rota.open(audioIn);
-        }
-        catch(Exception e){
-            e.printStackTrace();
-
-        }
-        try{
-            URL url = this.getClass().getClassLoader().getResource("assets/set.wav");
-            AudioInputStream audioIn = AudioSystem.getAudioInputStream(url);
+            rota.open(loadAudioFile("assets/switch.wav"));
             set = AudioSystem.getClip();
-            set.open(audioIn);
+            set.open(loadAudioFile("assets/set.wav"));
         }
         catch(Exception e){
             e.printStackTrace();
 
         }
-        for(int a = 0;a<=3;a++){
-            tetque.add(tetque.size(),(int )(Math.random() * 7 + 1));
+        
+        //Fill tetra queue
+        for(int a = 0;a<5;a++){
+            tetra_queue.add(new tetra());
 
         }
-        tet.add(tet.size(),new tetra(tetque.get(0)));
-
-        tetque.remove(0);
-        tetque.add(tetque.size(),(int )(Math.random() * 7 + 1));
-
-        sel+=1;
+        selected_tetra = tetra_queue.remove(0);
+        hold = null;
+        
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         t.start();
     }
@@ -91,115 +72,99 @@ public class TetrisDriver extends JFrame implements Runnable, KeyListener//Other
     public void run()
     {
         try{
+            //Play background music
             song.loop(20);
             while(true)
             {
                 t.sleep(40);//Smaller number == faster, larger == slower
-                timer1+=1;   
-
-                if(timer1%hdown==0&& timer2==0){
-                    tet.get(sel).down();
-                }
-                for(int a=0;a<tet.size();a++){
-                    for(int b=0;b<=3;b++){
-                        for(int c=0;c<=3;c++){
-                            if (tet.get(a).getYar().get(b)==-2 ){
-                                System.exit(0);
-                            }
-
-                        }
+                main_clock_count+=1;   
+                
+                
+                // Check if game has ended.
+                for(block tet : tetra_all){
+                    // If any block is at -2, consider death.
+                    if (tet.get_y() == -1){
+                        System.exit(0);
                     }
                 }
-                for(int a=0;a<tet.size();a++){
-                    for(int b=0;b<=3;b++){
-                        for(int c=0;c<=3;c++){
-                            if(tet.get(a).getXar().get(b)==tet.get(sel).getXar().get(c) &&
-                            tet.get(a).getYar().get(b)==tet.get(sel).getYar().get(c) && !(a == sel)){
-                                tet.get(sel).up();
-                            }
-
+                
+                
+                //Delayed Clock Cycles 
+                if(main_clock_count % TETRA_DROP_INTERVAL == 0){
+                    
+                    // Give a chance for player to adjust tetra piece before doing the final collapse;
+                    if(state == State.PRE_COLLAPSE){
+                        if(selected_tetra.can_move_down(tetra_all)){
+                            state = State.DROPPING;
+                        }
+                        else{
+                            state = State.COLLAPSE;
                         }
                     }
-                }
-                for(int a=0;a<tet.size();a++){
-                    for(int b=0;b<=3;b++){
-                        for(int c=0;c<=3;c++){
-                            if(tet.get(a).getXar().get(b)==tet.get(sel).getXar().get(c) &&
-                            tet.get(a).getYar().get(b)==tet.get(sel).getYar().get(c)+1 && !(a == sel) ||
-                            tet.get(sel).getYar().get(c)==19){
-                                colapse=true;
-
-                            }
-
+                    
+                    // Drop the piece if it can move down and in the correct state.
+                    if(state == State.DROPPING){
+                    
+                        if(selected_tetra.can_move_down(tetra_all)){
+                            selected_tetra.down();
                         }
+                            else{
+                            state = State.PRE_COLLAPSE;
+                        }
+                        
                     }
                 }
-                if(colapse){
-                    timer2+=1;
+                
+                
+                
 
-                }
-                if (timer2>=15){
-                    for(int a=0;a<tet.size();a++){
-                        for(int b=0;b<=3;b++){
-                            for(int c=0;c<=3;c++){
-                                if(tet.get(a).getXar().get(b)==tet.get(sel).getXar().get(c) &&
-                                tet.get(a).getYar().get(b)==tet.get(sel).getYar().get(c)+1 && !(a == sel) ||
-                                tet.get(sel).getYar().get(c)==19){
-                                    colapse1=true;
+                if(state == State.COLLAPSE){
+                    //Reset states
+                    playSound(set);
+                    can_hold = true;
+                    state = State.DROPPING;
+                    //Add selected tetra into environment blocks and chose new tetra.
+                    for (block sel_block : selected_tetra.getBlocks()){
+                        tetra_all.add(sel_block);
+                    }
+                    selected_tetra = tetra_queue.remove(0);
+                    tetra_queue.add(new tetra());
+                    
+                    // TODO: PREVENT REPEATING BLOCKS
+                    while(tetra_queue.get(3)==tetra_queue.get(2) && false){
+                        //tetra_queue.remove(3);
+                        //tetra_queue.add(tetra_queue.size(),(int )(Math.random() * 7 + 1));
+                    }
+                   
+                    
+                    //COLLAPSE BEHAVIOR
+                    
+                    // Count how many blocks are in each row.
+                    int row_block_count[] = new int[GRID_HEIGHT];
+                    for (block b : tetra_all){
+                        row_block_count[b.get_y()] += 1;
+                    }
+                    
+                    //Must do this from top to bottom for cascading effect.
+                    for(int row=0;row<GRID_HEIGHT;row++){
+                        // If a row is full
+                        if(row_block_count[row] == GRID_WIDTH){
+                            
+                            playSound(blast);
+                            ArrayList<block> removed_blocks = new ArrayList<block>();
+                            // Either remove the block or move it down by one
+                            for (block b : tetra_all){
+                                if(b.get_y() == row){
+                                    removed_blocks.add(b);
                                 }
-
-                            }
-                        }
-                    }
-                    timer2=0;
-                    colapse = false;
-                }
-                if(colapse1){
-                    tet.add(tet.size(),new tetra(tetque.get(0)));
-                    tetque.remove(0);
-                    tetque.add(tetque.size(),(int )(Math.random() * 7 + 1));
-                    while(tetque.get(3)==tetque.get(2)){
-                        tetque.remove(3);
-                        tetque.add(tetque.size(),(int )(Math.random() * 7 + 1));
-                    }
-                    set.setFramePosition(0);
-                    set.loop(0);
-                    sel+=1;
-                    timer2=0;
-                    colapse = false;
-                    colapse1=false;
-                    timer1=0;
-                    holding = true;
-                    for(int c=0;c<=19;c++){
-                        for(int d=0;d<=9;d++){
-                            for(int a=0;a<tet.size();a++){    
-                                for(int b=0;b<=3;b++){   
-                                    if(tet.get(a).getXar().get(b)==d &&
-                                    tet.get(a).getYar().get(b)==c){
-                                        rowcheck+=1;
-                                    }
+                                //Move down all blocks above the row.
+                                else if (b.get_y() < row){
+                                    b.move_y(1);
                                 }
-
                             }
+                            tetra_all.removeAll(removed_blocks);
+                            
                         }
-                        if(rowcheck==10){
-                            blast.setFramePosition(0);
-                            blast.loop(0);
-                            for(int a=0;a<tet.size();a++){    
-                                for(int b=0;b<=3;b++){   
-                                    if (tet.get(a).getYar().get(b)==c){
-                                        tet.get(a).die(b);
-                                    }
-                                    else if (tet.get(a).getYar().get(b)<=c){
-                                        tet.get(a).onedown(b);
-                                    }
-
-                                }
-
-                            }
-
-                        }
-                        rowcheck=0;
                     }
 
                 }
@@ -220,7 +185,7 @@ public class TetrisDriver extends JFrame implements Runnable, KeyListener//Other
         g.fillRect(0,0,1000,800);
         g.setColor(new Color(0,60,90));
         g.fillRect(300,40,350,700);
-
+        // TETRIS GRID
         for(int a=0;a<350;a+=35)
         {   for(int b=0;b<700;b+=35)
             {
@@ -229,9 +194,12 @@ public class TetrisDriver extends JFrame implements Runnable, KeyListener//Other
 
             }
         }
-        for(int a=0;a<tet.size();a++){
-            tet.get(a).draw(g);
+        //Draw environment Blocks
+        for(block b : tetra_all){
+            b.draw(g);
         }
+        selected_tetra.draw(g);
+        
         g.setColor(new Color(255,255,255));
         g.fillRect(670,60,120,120);
         g.setColor(Color.BLACK);
@@ -241,817 +209,21 @@ public class TetrisDriver extends JFrame implements Runnable, KeyListener//Other
         g.fillRect(160,60,120,120);
         g.setColor(Color.BLACK);
         g.drawRect(160,60,120,120);
-        //COMING NEXT SECTION
-        if(tetque.get(0)==1)
-        {
-            Color c= new Color(148,0,211);
-            g.setColor(c);
-            g.fillRect(630+4*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+4*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(630+4*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+4*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(630+3*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+3*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(630+5*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+5*20,100+1*20,20,20);
+        
+        //Next in queue
+        tetra_queue.get(0).drawQueue(g,630,100,20);
+        //Rest of queue
+        for(int a = 1; a < tetra_queue.size(); a++){
+            tetra_queue.get(a).drawQueue(g,657,220 + 55 * (a-1),15);
         }
-        else if(tetque.get(0)==2)
-        {
-            Color c=new Color(220,20,60);
-            g.setColor(c);
-            g.fillRect(630+4*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+4*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(630+5*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+5*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(630+4*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+4*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(630+3*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+3*20,100+1*20,20,20);
-        }
-        else if(tetque.get(0)==3)
-        {
-            Color c= new Color(50,205,50);
-            g.setColor(c);
-            g.fillRect(630+4*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+4*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(630+3*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+3*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(630+4*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+4*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(630+5*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+5*20,100+1*20,20,20);
-        }
-        else if(tetque.get(0)==4)
-        {
-            Color c= new Color(235,235,0);
-            g.setColor(c);
-            g.fillRect(630+4*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+4*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(630+5*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+5*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(630+4*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+4*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(630+5*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+5*20,100+1*20,20,20);
-        }
-        else if(tetque.get(0)==5)
-        {
-            Color c= new Color(0,191,255);
-            g.setColor(c);
-            g.fillRect(632+4*20,75+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(632+4*20,75+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(632+4*20,75+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(632+4*20,75+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(632+4*20,75+2*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(632+4*20,75+2*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(632+4*20,75+3*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(632+4*20,75+3*20,20,20);
-        }
-        else if(tetque.get(0)==6)
-        {
-            Color c= new Color(0,0,205);
-            g.setColor(c);
-            g.fillRect(630+5*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+5*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(630+4*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+4*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(630+4*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+4*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(630+6*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(630+6*20,100+1*20,20,20);
-        }
-        else if(tetque.get(0)==7)
-        {
-            Color c= new Color(255,140,0);
-            g.setColor(c);
-            g.fillRect(650+3*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(650+3*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(650+4*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(650+4*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(650+4*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(650+4*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(650+2*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(650+2*20,100+1*20,20,20);
+        
+        
+        if (hold != null){
+            hold.drawQueue(g,120,100,20);
         }
 
-        if(tetque.get(1)==1)
-        {
-            Color c= new Color(148,0,211);
-            g.setColor(c);
-            g.fillRect(657+4*15,220+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,220+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,220+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,220+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+3*15,220+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+3*15,220+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,220+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,220+1*15,15,15);
-        }
-        else if(tetque.get(1)==2)
-        {
-            Color c=new Color(220,20,60);
-            g.setColor(c);
-            g.fillRect(657+4*15,220+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,220+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,220+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,220+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,220+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,220+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+3*15,220+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+3*15,220+1*15,15,15);
-        }
-        else if(tetque.get(1)==3)
-        {
-            Color c= new Color(50,205,50);
-            g.setColor(c);
-            g.fillRect(657+4*15,220+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,220+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+3*15,220+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+3*15,220+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,220+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,220+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,220+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,220+1*15,15,15);
-        }
-        else if(tetque.get(1)==4)
-        {
-            Color c= new Color(235,235,0);
-            g.setColor(c);
-            g.fillRect(657+4*15,220+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,220+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,220+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,220+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,220+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,220+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,220+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,220+1*15,15,15);
-        }
-        else if(tetque.get(1)==5)
-        {
-            Color c= new Color(0,191,255);
-            g.setColor(c);
-            g.fillRect(657+4*15,190+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,190+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,190+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,190+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,190+2*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,190+2*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,190+3*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,190+3*15,15,15);
-        }
-        else if(tetque.get(1)==6)
-        {
-            Color c= new Color(0,0,205);
-            g.setColor(c);
-            g.fillRect(657+5*15,220+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,220+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,220+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,220+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,220+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,220+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+6*15,220+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+6*15,220+1*15,15,15);
-        }
-        else if(tetque.get(1)==7)
-        {
-            Color c= new Color(255,140,0);
-            g.setColor(c);
-            g.fillRect(677+3*15,220+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(677+3*15,220+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(677+4*15,220+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(677+4*15,220+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(677+4*15,220+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(677+4*15,220+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(677+2*15,220+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(677+2*15,220+1*15,15,15);
-        }
-        if(tetque.get(2)==1)
-        {
-            Color c= new Color(148,0,211);
-            g.setColor(c);
-            g.fillRect(657+4*15,270+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,270+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,270+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,270+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+3*15,270+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+3*15,270+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,270+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,270+1*15,15,15);
-        }
-        else if(tetque.get(2)==2)
-        {
-            Color c=new Color(220,20,60);
-            g.setColor(c);
-            g.fillRect(657+4*15,270+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,270+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,270+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,270+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,270+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,270+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+3*15,270+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+3*15,270+1*15,15,15);
-        }
-        else if(tetque.get(2)==3)
-        {
-            Color c= new Color(50,205,50);
-            g.setColor(c);
-            g.fillRect(657+4*15,270+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,270+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+3*15,270+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+3*15,270+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,270+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,270+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,270+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,270+1*15,15,15);
-        }
-        else if(tetque.get(2)==4)
-        {
-            Color c= new Color(235,235,0);
-            g.setColor(c);
-            g.fillRect(657+4*15,270+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,270+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,270+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,270+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,270+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,270+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,270+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,270+1*15,15,15);
-        }
-        else if(tetque.get(2)==5)
-        {
-            Color c= new Color(0,191,255);
-            g.setColor(c);
-            g.fillRect(657+4*15,280+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,280+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+3*15,280+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+3*15,280+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,280+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,280+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+6*15,280+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+6*15,280+1*15,15,15);
-        }
-        else if(tetque.get(2)==6)
-        {
-            Color c= new Color(0,0,205);
-            g.setColor(c);
-            g.fillRect(657+5*15,270+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,270+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,270+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,270+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,270+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,270+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+6*15,270+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+6*15,270+1*15,15,15);
-        }
-        else if(tetque.get(2)==7)
-        {
-            Color c= new Color(255,140,0);
-            g.setColor(c);
-            g.fillRect(677+3*15,270+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(677+3*15,270+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(677+4*15,270+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(677+4*15,270+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(677+4*15,270+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(677+4*15,270+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(677+2*15,270+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(677+2*15,270+1*15,15,15);
-        }
-        if(tetque.get(3)==1)
-        {
-            Color c= new Color(148,0,211);
-            g.setColor(c);
-            g.fillRect(657+4*15,330+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,330+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,330+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,330+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+3*15,330+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+3*15,330+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,330+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,330+1*15,15,15);
-        }
-        else if(tetque.get(3)==2)
-        {
-            Color c=new Color(220,20,60);
-            g.setColor(c);
-            g.fillRect(657+4*15,330+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,330+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,330+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,330+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,330+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,330+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+3*15,330+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+3*15,330+1*15,15,15);
-        }
-        else if(tetque.get(3)==3)
-        {
-            Color c= new Color(50,205,50);
-            g.setColor(c);
-            g.fillRect(657+4*15,330+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,330+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+3*15,330+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+3*15,330+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,330+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,330+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,330+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,330+1*15,15,15);
-        }
-        else if(tetque.get(3)==4)
-        {
-            Color c= new Color(235,235,0);
-            g.setColor(c);
-            g.fillRect(657+4*15,330+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,330+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,330+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,330+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,330+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,330+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+5*15,330+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,330+1*15,15,15);
-        }
-        else if(tetque.get(3)==5)
-        {
-            Color c= new Color(0,191,255);
-            g.setColor(c);
-            g.fillRect(657+4*15,340+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,340+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,340+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,340+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,340+2*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,340+2*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,340+3*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,340+3*15,15,15);
-        }
-        else if(tetque.get(3)==6)
-        {
-            Color c= new Color(0,0,205);
-            g.setColor(c);
-            g.fillRect(657+5*15,330+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+5*15,330+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,330+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,330+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+4*15,330+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+4*15,330+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(657+6*15,330+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(657+6*15,330+1*15,15,15);
-        }
-        else if(tetque.get(3)==7)
-        {
-            Color c= new Color(255,140,0);
-            g.setColor(c);
-            g.fillRect(677+3*15,330+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(677+3*15,330+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(677+4*15,330+0*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(677+4*15,330+0*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(677+4*15,330+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(677+4*15,330+1*15,15,15);
-
-            g.setColor(c);
-            g.fillRect(677+2*15,330+1*15,15,15);
-            g.setColor(Color.BLACK);
-            g.drawRect(677+2*15,330+1*15,15,15);
-        }
-
-        if(hold==1)
-        {
-            Color c= new Color(148,0,211);
-            g.setColor(c);
-            g.fillRect(120+4*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+4*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+4*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+4*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+3*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+3*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+5*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+5*20,100+1*20,20,20);
-        }
-        else if(hold==2)
-        {
-            Color c=new Color(220,20,60);
-            g.setColor(c);
-            g.fillRect(120+4*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+4*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+5*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+5*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+4*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+4*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+3*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+3*20,100+1*20,20,20);
-        }
-        else if(hold==3)
-        {
-            Color c= new Color(50,205,50);
-            g.setColor(c);
-            g.fillRect(120+4*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+4*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+3*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+3*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+4*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+4*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+5*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+5*20,100+1*20,20,20);
-        }
-        else if(hold==4)
-        {
-            Color c= new Color(235,235,0);
-            g.setColor(c);
-            g.fillRect(120+4*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+4*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+5*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+5*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+4*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+4*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+5*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+5*20,100+1*20,20,20);
-        }
-        else if(hold==5)
-        {
-            Color c= new Color(0,191,255);
-            g.setColor(c);
-            g.fillRect(120+4*20,76+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+4*20,76+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+4*20,76+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+4*20,76+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+4*20,76+2*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+4*20,76+2*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+4*20,76+3*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+4*20,76+3*20,20,20);
-        }
-        else if(hold==6)
-        {
-            Color c= new Color(0,0,205);
-            g.setColor(c);
-            g.fillRect(120+5*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+5*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+4*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+4*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+4*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+4*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(120+6*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(120+6*20,100+1*20,20,20);
-        }
-        else if(hold==7)
-        {
-            Color c= new Color(255,140,0);
-            g.setColor(c);
-            g.fillRect(140+3*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(140+3*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(140+4*20,100+0*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(140+4*20,100+0*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(140+4*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(140+4*20,100+1*20,20,20);
-
-            g.setColor(c);
-            g.fillRect(140+2*20,100+1*20,20,20);
-            g.setColor(Color.BLACK);
-            g.drawRect(140+2*20,100+1*20,20,20);
-        }
         g.setColor(new Color(0,0,0));
         g.drawString("HOLD",205,170);
-
         g.drawString("NEXT",713,170);
 
         g.dispose();
@@ -1072,135 +244,71 @@ public class TetrisDriver extends JFrame implements Runnable, KeyListener//Other
 
     public void keyReleased(KeyEvent k)
     {
-
+        //Reset hdown
         if(k.getKeyCode()==40){
-
-            hdown=15;
+            TETRA_DROP_INTERVAL=TETRA_DROP_INTERVAL_DEFAULT;
         }
     }
 
     public void keyPressed(KeyEvent k)
     {
+        //KEY SHIFT : HOLDING KEY
         if(k.getKeyCode()==32){
-            if(holding){
-                holding = false;
-                int b = hold;
-                hold = tet.get(sel).geta1();
-                for(int a=3;a>=0;a--)
-                    tet.get(sel).die(a);
-                if(b==0){
-                    tet.add(tet.size(),new tetra(tetque.get(0)));
-                    tetque.remove(0);
-                    tetque.add(tetque.size(),(int )(Math.random() * 7 + 1));
+            if(can_hold){
+                can_hold = false;
+                if (hold == null){
+                    hold = selected_tetra;
+                    selected_tetra = tetra_queue.remove(0);
+                    tetra_queue.add(new tetra()); 
                 }
-                else
-                    tet.add(tet.size(),new tetra(b));
-                sel+=1;
+                else{
+                    int hold_id = hold.getId();
+                    hold = selected_tetra;
+                    selected_tetra = new tetra(hold_id);
+                }
             }
 
         }
+        
+        // Up key : Rotate
         if(k.getKeyCode()==38)
         {   
-            for(int a=0;a<tet.size();a++){
-                for(int b=0;b<=3;b++){
-                    for(int c=1;c<=3;c++){
-                        int xx=tet.get(sel).getXar().get(c);
-                        int yy=tet.get(sel).getYar().get(c);
-                        xx-=tet.get(sel).getXar().get(0);
-                        yy-=tet.get(sel).getYar().get(0);
-
-                        int xxx =tet.get(sel).getXar().get(0)-yy;
-                        int yyy =tet.get(sel).getYar().get(0)+xx;
-
-                        if(tet.get(a).getXar().get(b)==xxx &&
-                        tet.get(a).getYar().get(b)==yyy && !(a == sel)|| yyy==20){
-                            selm = false;
-                        }
-                        //Check if can move right
-                        if(xxx==-1){
-                            for(int aa=0;aa<tet.size();aa++){
-                                for(int bb=0;bb<=3;bb++){
-                                    for(int cc=0;cc<=3;cc++){
-                                        if(tet.get(aa).getXar().get(bb)==tet.get(sel).getXar().get(cc)+1 &&
-                                        tet.get(aa).getYar().get(bb)==tet.get(sel).getYar().get(cc) && !(aa == sel) || tet.get(sel).getRotation()){
-                                            selm = false;
-                                        }
-
-                                    }
-                                }
-                            }
-                            if(selm)
-                                tet.get(sel).right();
-                        }
-                        //Check if it can move left.
-                        if(xxx==10){
-                            for(int aa=0;aa<tet.size();aa++){
-                                for(int bb=0;bb<=3;bb++){
-                                    for(int cc=0;cc<=3;cc++){
-                                        if(tet.get(aa).getXar().get(bb)==tet.get(sel).getXar().get(cc)-1 &&
-                                        tet.get(aa).getYar().get(bb)==tet.get(sel).getYar().get(cc) && !(aa == sel) || tet.get(sel).getRotation()){
-                                            selm = false;
-                                        }
-
-                                    }
-                                }
-                            }
-                            if(selm)
-                                tet.get(sel).left();
-                        }
-                    }
-                }
+            if(selected_tetra.rotate(tetra_all)){
+                playSound(rota);
             }
-            if(selm){
-                rota.setFramePosition(0);
-                rota.loop(0);
-                tet.get(sel).rotate();
-            }
-            selm=true;
         }
+        // Left Key
         if(k.getKeyCode()==37){
-
-            for(int a=0;a<tet.size();a++){
-                for(int b=0;b<=3;b++){
-                    for(int c=0;c<=3;c++){
-                        if(tet.get(a).getXar().get(b)==tet.get(sel).getXar().get(c)-1 &&
-                        tet.get(a).getYar().get(b)==tet.get(sel).getYar().get(c) && !(a == sel)){
-                            selm = false;
-                        }
-
-                    }
-                }
-            }
-            if(selm)
-                tet.get(sel).left();
-
-            selm=true;
+            selected_tetra.left(tetra_all);
         }
+        // Right Key
         if(k.getKeyCode()==39){
-            for(int a=0;a<tet.size();a++){
-                for(int b=0;b<=3;b++){
-                    for(int c=0;c<=3;c++){
-                        if(tet.get(a).getXar().get(b)==tet.get(sel).getXar().get(c)+1 &&
-                        tet.get(a).getYar().get(b)==tet.get(sel).getYar().get(c) && !(a == sel)){
-                            selm = false;
-                        }
-
-                    }
-                }
-            }
-            if(selm)
-                tet.get(sel).right();
-            selm=true;
+            selected_tetra.right(tetra_all);
         }
+        //Down Key : Modify Interval
         if(k.getKeyCode()==40){
-
-            hdown=1;
+            TETRA_DROP_INTERVAL=1;
         }
+
     }
 
     public void keyTyped(KeyEvent k)
     {
 
     }
-
+    
+    public AudioInputStream loadAudioFile(String file){
+        try{
+            URL url = this.getClass().getClassLoader().getResource(file);
+            return AudioSystem.getAudioInputStream(url);
+        }
+        catch(Exception e){
+            e.printStackTrace();
+        }
+        return null;
+    }
+    public void playSound(Clip sound){
+        sound.setFramePosition(0);
+        sound.loop(0);
+    }
 }
